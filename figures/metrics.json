@@ -1,0 +1,9 @@
+{
+  "delay_recovery_rmse_s": 3.1253,
+  "localisation_median_error_cm": 0.211,
+  "localisation_mean_error_cm": 0.241,
+  "localisation_p90_error_cm": 0.401,
+  "substrate_side_cm": 20.0,
+  "drift_median_error_stale_cm": 1.618,
+  "drift_median_error_recalibrated_cm": 0.236
+}
