@@ -1,0 +1,43 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "mycelium-tdoa: an open simulation testbed for TDOA source localisation on living mycelium"
+abstract: >-
+  An open, reproducible simulation framework for time-difference-of-arrival (TDOA)
+  source localisation on a living mycelial substrate: an anisotropic, heterogeneous
+  travel-time medium model, regularised GCC-PHAT delay estimation, a Gaussian-process
+  fingerprinting localiser, and a medium-aware Cramer-Rao identifiability analysis.
+type: software
+authors:
+  - given-names: "Antonio Jesús"
+    family-names: "Maroto Enríquez"
+    affiliation: "Independent Institute of Transdisciplinary Research in Consciousness and Cosmos (IITRCC), Spain"
+    email: "antonio@iitrcc.org"
+    # Paste your ORCID here once registered at https://orcid.org (keep the full URL form):
+    orcid: "https://orcid.org/0009-0005-8238-7310"
+version: "0.2.0"
+date-released: "2026-06-13"
+license: MIT
+# Replace <your-user> with your GitHub username once the repo is created:
+repository-code: "https://github.com/<your-user>/mycelium-tdoa"
+url: "https://iitrcc.org"
+keywords:
+  - mycelium
+  - fungal electronics
+  - bioelectronics
+  - biohybrid sensing
+  - TDOA
+  - source localization
+  - Cramer-Rao bound
+  - Gaussian process
+  - GCC-PHAT
+  - unconventional computing
+# Once the companion preprint has a DOI, you can point readers to it as the
+# preferred citation by uncommenting and completing the block below:
+# preferred-citation:
+#   type: article
+#   title: "Identifiability of stimulus localisation in living mycelial networks: an open simulation framework and a Cramer-Rao analysis"
+#   authors:
+#     - given-names: "Antonio Jesús"
+#       family-names: "Maroto Enríquez"
+#   year: 2026
+#   doi: "<preprint-DOI>"
