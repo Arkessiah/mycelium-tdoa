@@ -75,6 +75,57 @@ def crlb_at(medium: MycelialMedium, electrodes: np.ndarray, point, sigma_t: floa
     return float(sigma_t * gmap[i, j])
 
 
+def n_minus_1_crlb_map(medium: MycelialMedium, electrodes: np.ndarray):
+    """sigma_t = 1 CRLB map that survives the loss of any single electrode.
+
+    Worst case over the E maps computed with one electrode removed: a point is
+    feasible on this map only if it stays feasible whichever electrode fails.
+    """
+    maps = [geometric_crlb_map(medium, np.delete(electrodes, k, axis=0))
+            for k in range(len(electrodes))]
+    stacked = np.stack([np.where(np.isfinite(m), m, np.inf) for m in maps])
+    worst = stacked.max(0)
+    return np.where(np.isfinite(worst), worst, np.nan)
+
+
+def electrode_noise_cov(electrodes: np.ndarray, sigma_t: float, rho: float,
+                        corr_len_cm: float) -> np.ndarray:
+    """Timing-noise covariance with spatially correlated components.
+
+    A fraction `rho` of each electrode's noise variance is shared with its
+    neighbours, decaying as exp(-distance / corr_len_cm); the rest is independent.
+    rho = 0 recovers the i.i.d. model of Eq. (1).
+    """
+    d = np.linalg.norm(electrodes[:, None, :] - electrodes[None, :, :], axis=-1)
+    return sigma_t**2 * ((1.0 - rho) * np.eye(len(electrodes)) + rho * np.exp(-d / corr_len_cm))
+
+
+def crlb_map_cov(medium: MycelialMedium, electrodes: np.ndarray, cov: np.ndarray):
+    """Positional CRLB (cm) for a general timing-noise covariance `cov` (E x E).
+
+    With W = cov^-1 and H = [G, 1], the Fisher information of (p, t_emit) is
+    H^T W H; the Schur complement on t_emit gives the 2x2 position block
+        F = G^T W G - (G^T W 1)(1^T W G) / (1^T W 1).
+    For cov = sigma_t^2 I this equals Eq. (2). Noise that is common to every
+    electrode is indistinguishable from t_emit and costs nothing.
+    """
+    fields = travel_time_fields(medium, electrodes)
+    gx, gy = field_gradients(fields, medium.dx)
+    W = np.linalg.inv(cov)
+    w1 = W.sum(1)
+    c = w1.sum()
+    Wgx = np.tensordot(W, gx, axes=1)
+    Wgy = np.tensordot(W, gy, axes=1)
+    ux = np.tensordot(w1, gx, axes=1)
+    uy = np.tensordot(w1, gy, axes=1)
+    Fxx = (gx * Wgx).sum(0) - ux * ux / c
+    Fyy = (gy * Wgy).sum(0) - uy * uy / c
+    Fxy = (gx * Wgy).sum(0) - ux * uy / c
+    det = Fxx * Fyy - Fxy * Fxy
+    det = np.where(det <= 1e-12, np.nan, det)
+    return np.sqrt(np.clip((Fxx + Fyy) / det, 0, None))
+
+
 def feasible_fraction(geom_map: np.ndarray, sigma_t: float, threshold_cm: float,
                       mask: np.ndarray | None = None) -> float:
     """Fraction of substrate where CRLB (= sigma_t * geom_map) is below threshold."""
@@ -88,24 +139,30 @@ def feasible_fraction(geom_map: np.ndarray, sigma_t: float, threshold_cm: float,
 # --------------------------------------------------- empirical noise calibration
 def calibrate_timing_noise(medium: MycelialMedium, electrodes: np.ndarray,
                            snr_db_values, n_reps: int = 6, n_trials: int = 40,
-                           max_tau: float = 30.0, seed: int = 0):
+                           max_tau: float = 30.0, seed: int = 0,
+                           pink_fraction: float = 0.0, margin_cm: float = 1.0):
     """Empirically measure per-electrode timing precision sigma_t (s) vs SNR.
 
     Runs the real delay-estimation pipeline (synthesise -> averaged GCC-PHAT) and
     converts the relative-delay error variance to an absolute per-electrode
     sigma_t (var of a TDOA ~ 2 sigma_t^2). This ties the Fisher analysis to the
     measured behaviour of the signal stage rather than an assumed number.
+
+    Each trial draws a new stimulus position: the delay spread, and so the error,
+    depends on where the stimulus is, and a single position is not representative.
+    `pink_fraction` is passed to the trace synthesis (share of 1/f noise power).
     """
     rng = np.random.default_rng(seed)
-    src = (medium.size_cm * 0.55, medium.size_cm * 0.4)
-    true = medium.arrival_times(src, electrodes)
-    true_rel = true - true[0]
     out = {}
     for snr in snr_db_values:
         errs = []
         for _ in range(n_trials):
+            src = tuple(rng.uniform(margin_cm, medium.size_cm - margin_cm, size=2))
+            true = medium.arrival_times(src, electrodes)
+            true_rel = true - true[0]
             est = estimate_delays_averaged(true, n_repeats=n_reps, snr_db=snr,
-                                           max_tau=max_tau, rng=rng)
+                                           max_tau=max_tau, rng=rng,
+                                           pink_fraction=pink_fraction)
             errs.append((est - true_rel)[1:])  # drop the reference (always 0)
         errs = np.asarray(errs)
         var_tdoa = np.mean(errs**2)
@@ -139,6 +196,59 @@ def ml_localize(fields: np.ndarray, observed_tdoa: np.ndarray, ref: int = 0):
     idx = np.argmin(cost)
     i, j = divmod(idx, n)
     return j, i  # (col=x index, row=y index)
+
+
+def mmse_localize(fields: np.ndarray, observed_tdoa: np.ndarray, sigma_t: float,
+                  xx: np.ndarray, yy: np.ndarray, prior_mask: np.ndarray, ref: int = 0):
+    """Posterior-mean position under a uniform prior on `prior_mask`.
+
+    Same Gaussian TDOA likelihood as `ml_localize`, but averaged over the grid
+    instead of maximised. Under that prior this is the minimum-mean-square-error
+    estimator: no estimator, biased or not, has a lower expected squared error.
+    """
+    E = fields.shape[0]
+    model = fields - fields[ref]
+    keep = [e for e in range(E) if e != ref]
+    resid = observed_tdoa[:, None, None] - model[keep]
+    s = resid.sum(0)
+    cost = (resid**2).sum(0) - s * s / E
+    logp = np.where(prior_mask, -cost / (2.0 * sigma_t**2), -np.inf)
+    w = np.exp(logp - logp[prior_mask].max())
+    w /= w.sum()
+    return float((w * xx).sum()), float((w * yy).sum())
+
+
+def bayes_comparison(medium: MycelialMedium, electrodes: np.ndarray, sigma_t: float,
+                     n_trials: int = 300, margin_cm: float = 1.0, seed: int = 0):
+    """Monte-Carlo RMSE of the ML and MMSE estimators for uniformly drawn stimuli.
+
+    The CRLB only bounds *unbiased* estimators. On a bounded substrate a learned
+    localiser is pulled towards the interior and can sit below it where the bound
+    is large; the MMSE RMSE is the right floor for such estimators.
+    Returns (ml_rmse, mmse_rmse, crlb_rms) over the same stimuli; crlb_rms is the
+    root-mean-square of the pointwise CRLB, for reference.
+    """
+    rng = np.random.default_rng(seed)
+    fields = travel_time_fields(medium, electrodes)
+    gmap = geometric_crlb_map(medium, electrodes)
+    lo, hi = margin_cm, medium.size_cm - margin_cm
+    prior = (medium.xx >= lo) & (medium.xx <= hi) & (medium.yy >= lo) & (medium.yy <= hi)
+    E = len(electrodes)
+    se_ml, se_mmse, crlb_sq = [], [], []
+    for _ in range(n_trials):
+        px, py = rng.uniform(lo, hi, size=2)
+        i0, j0 = divmod(medium.node_of(px, py), medium.grid_n)
+        tx, ty = j0 * medium.dx, i0 * medium.dx  # grid point the stimulus snaps to
+        obs = fields[:, i0, j0] + rng.normal(0, sigma_t, size=E)
+        obs_tdoa = (obs - obs[0])[1:]
+        jx, iy = ml_localize(fields, obs_tdoa, ref=0)
+        se_ml.append((jx * medium.dx - tx) ** 2 + (iy * medium.dx - ty) ** 2)
+        mx, my = mmse_localize(fields, obs_tdoa, sigma_t, medium.xx, medium.yy, prior)
+        se_mmse.append((mx - tx) ** 2 + (my - ty) ** 2)
+        c = sigma_t * gmap[i0, j0]
+        crlb_sq.append(c * c if np.isfinite(c) else np.nan)
+    return (float(np.sqrt(np.mean(se_ml))), float(np.sqrt(np.mean(se_mmse))),
+            float(np.sqrt(np.nanmean(crlb_sq))))
 
 
 def validate_crlb(medium: MycelialMedium, electrodes: np.ndarray, points,

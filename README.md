@@ -86,30 +86,31 @@ ceiling.
 | Stage | Result |
 |---|---|
 | Warped wavefront | Travel-time contours are clearly non-circular (see `figures/01_medium.png`) |
-| Delay recovery (GCC-PHAT, 6 reps, 8 dB, 20 stimulus positions) | RMSE ≈ 3.5 s on delays spanning up to ~30 s; errors are close to Gaussian |
-| Same, half of the noise power 1/f (same SNR) | RMSE ≈ 7.2 s: coloured noise doubles the timing error |
-| Localisation (fingerprinting) | **median error ≈ 1.4 cm** (p90 ≈ 2.6 cm) on a 20 cm substrate |
+| Delay recovery (GCC-PHAT, 6 reps, 8 dB, 20 stimulus positions) | RMSE ≈ 3.3 s on delays spanning up to ~30 s; errors are close to Gaussian |
+| Same, half of the noise power 1/f (same SNR) | RMSE ≈ 6.6 s: at 8 dB coloured noise doubles the timing error |
+| Localisation (fingerprinting) | **median error ≈ 1.8 cm** (p90 ≈ 3.6 cm) on a 20 cm substrate |
 | — no-skill baseline / noise-free ceiling | ≈ 6.8 cm / ≈ 0.1 cm |
-| — GP uncertainty | 97.5 % of true positions fall within 2σ |
-| Drift (stale model → recalibrated) | ≈ 2.0 cm → ≈ 1.5 cm |
-| Per-electrode timing offsets (fixed) | absorbed by calibration (≈ 1.4 cm); one reseated electrode (+1 sd) → ≈ 1.4 cm |
-| One dead electrode (refit on the other five) | worst case ≈ 1.6 cm |
+| — GP uncertainty | 99 % of true positions fall within 2σ |
+| Drift (stale model → recalibrated) | ≈ 2.5 cm → ≈ 2.1 cm |
+| Per-electrode timing offsets (fixed) | absorbed by calibration (≈ 1.8 cm); one reseated electrode (+1 sd) → ≈ 1.9 cm |
+| One dead electrode (refit on the other five) | worst case ≈ 2.1 cm |
 
 Findings worth carrying into a write-up:
 
 - **Timing noise dominates.** With noise-free delays the localiser reaches ≈ 0.1 cm,
-  so almost all of the ≈ 1.4 cm comes from delay estimation. Earlier versions of this
-  README quoted ≈ 0.2 cm, which came from running localisation at 0.3 s of delay
-  noise, ten times less than the delay stage measures.
+  so almost all of the ≈ 1.8 cm comes from delay estimation. Versions up to 0.2.0
+  quoted ≈ 0.2–0.26 cm, which came from running localisation at 0.3 s of delay
+  noise, about ten times less than the delay stage measures.
 - **At low SNR you must average over repeated stimuli**, and the noise spectrum
   matters as much as its power: 1/f noise, typical of extracellular recordings,
-  doubles the delay error at the same SNR.
+  doubles the delay error at 8 dB and has a threshold below ~10 dB (see the
+  identifiability section).
 - **Drift is real but second-order at this SNR.** Recalibration still helps
-  (≈ 2.0 → ≈ 1.5 cm), but the gain is far smaller than the gap between the measured
+  (≈ 2.5 → ≈ 2.1 cm), but the gain is far smaller than the gap between the measured
   and the noise-free error.
-- **The array degrades gracefully.** Fixed per-electrode offsets are absorbed by
-  fingerprinting, and losing any single electrode costs at most ≈ 0.3 cm, provided
-  the localiser is refitted without it.
+- **Fixed per-electrode offsets are absorbed by fingerprinting**, and the learned
+  localiser degrades gracefully when it can be refitted after losing an electrode.
+  The bound tells a harsher story about that loss (below).
 
 ## Identifiability: the model-independent result
 
@@ -121,18 +122,27 @@ so it is medium-aware rather than an idealised isotropic calculation.
 | Output | What it tells you |
 |---|---|
 | CRLB map (`id_01`) | Where on the substrate localisation is feasible vs ill-posed. Inside the electrode hull, ~1–2 cm; outside it, the bound explodes. A medium-aware generalised GDOP. |
-| Validation (`id_02`) | An efficient ML estimator reaches the bound (empirical/CRLB ≈ 1.05), so the bound is real and achievable, not just theoretical. |
-| Phase diagram (`id_03`) | Feasible substrate area over (anisotropy × SNR). **SNR dominates**: below ~8 dB localisation is infeasible over most of the substrate; anisotropy steadily shrinks the feasible region. |
+| Validation (`id_02`) | An efficient ML estimator reaches the bound, at unit noise (empirical/CRLB ≈ 1.05) and at the operating noise of 10 dB (≈ 1.08), so the bound is real and achievable, not just theoretical. |
+| Phase diagram (`id_03`) | Feasible substrate area over (anisotropy × SNR), for white noise and for noise with half its power 1/f. **SNR dominates**: below ~8 dB localisation is infeasible over most of the substrate; anisotropy steadily shrinks the feasible region. With 1/f noise the timing error has a threshold and **nothing below 10 dB is feasible**. |
+| Robustness (`id_04`) | (a) If any one of the six electrodes may fail, the area with CRLB < 2 cm at 10 dB falls from ≈ 30 % to ≈ 1 %: the layout has no redundancy. (b) Spatially correlated timing noise does not hurt and long-range correlation helps (≈ 30 → ≈ 49 %), because the common part is indistinguishable from the unknown emission time. (c) Over the whole substrate the GP (RMSE ≈ 2.2 cm) is within ≈ 12 % of the Bayesian optimum (MMSE ≈ 1.9 cm). |
 
 Timing precision is not assumed — it is **measured** by running the real delay
-pipeline across SNRs (`calibrate_timing_noise`) and fitting the
-`sigma_t ∝ 1/√SNR` law, then propagated through the Fisher analysis. This ties the
-signal stage to the localisation bound.
+pipeline across SNRs (`calibrate_timing_noise`, a new random stimulus position per
+trial) and fitting the `sigma_t ∝ 1/√SNR` law, then propagated through the Fisher
+analysis. The phase diagrams use the value measured at each SNR, because the law
+does not hold for 1/f noise. This ties the signal stage to the localisation bound.
+
+**The CRLB bounds unbiased estimators only.** Near the edges of a bounded substrate
+the pointwise bound grows large (its RMS over the substrate is ≈ 4.9 cm at 10 dB),
+and learned or grid-limited estimators sit below it because they are pulled
+towards the interior. `bayes_comparison` computes the minimum-mean-square-error
+estimator under a uniform prior, which is the correct floor for any estimator.
 
 **Design takeaway** (for this 6-electrode layout, 20 cm substrate, 2 cm tolerance):
-you need roughly SNR ≥ 12 dB to localise over a majority of the area, and stronger
-anisotropy raises that requirement. That is a hardware spec produced with no
-hardware.
+you need roughly SNR ≥ 12 dB to localise over a majority of the area, stronger
+anisotropy raises that requirement, 1/f noise makes 10 dB a hard floor, and
+tolerating one dead electrode needs a denser or redundant array. That is a hardware
+spec produced with no hardware.
 
 ## The sim-to-real flywheel
 
