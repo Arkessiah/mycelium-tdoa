@@ -14,11 +14,10 @@ authors:
     email: "antonio@iitrcc.org"
     # Paste your ORCID here once registered at https://orcid.org (keep the full URL form):
     orcid: "https://orcid.org/0009-0005-8238-7310"
-version: "0.2.0"
-date-released: "2026-06-13"
+version: "0.3.0"
+date-released: "2026-10-22"
 license: MIT
-# Replace <your-user> with your GitHub username once the repo is created:
-repository-code: "https://github.com/<your-user>/mycelium-tdoa"
+repository-code: "https://github.com/Arkessiah/mycelium-tdoa"
 url: "https://iitrcc.org"
 keywords:
   - mycelium
@@ -31,13 +30,14 @@ keywords:
   - Gaussian process
   - GCC-PHAT
   - unconventional computing
-# Once the companion preprint has a DOI, you can point readers to it as the
-# preferred citation by uncommenting and completing the block below:
-# preferred-citation:
-#   type: article
-#   title: "Identifiability of stimulus localisation in living mycelial networks: an open simulation framework and a Cramer-Rao analysis"
-#   authors:
-#     - given-names: "Antonio Jesús"
-#       family-names: "Maroto Enríquez"
-#   year: 2026
-#   doi: "<preprint-DOI>"
+# Companion preprint. The DOI is that of version 1; switch it to the version 2
+# (or concept) DOI once version 2 is published on Zenodo.
+preferred-citation:
+  type: article
+  title: "Identifiability of stimulus localisation in living mycelial networks: an open simulation framework and a Cramer-Rao analysis"
+  authors:
+    - given-names: "Antonio Jesús"
+      family-names: "Maroto Enríquez"
+      orcid: "https://orcid.org/0009-0005-8238-7310"
+  year: 2026
+  doi: "10.5281/zenodo.20673483"

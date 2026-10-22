@@ -17,7 +17,7 @@ from .crlb import (
     ml_localize,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __all__ = [
     "MycelialMedium",
     "default_electrodes",
