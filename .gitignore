@@ -1,3 +1,7 @@
 #APPLE
 .DS_Store
 
+
+#PYTHON
+__pycache__/
+*.pyc
