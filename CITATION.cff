@@ -30,8 +30,7 @@ keywords:
   - Gaussian process
   - GCC-PHAT
   - unconventional computing
-# Companion preprint. The DOI is that of version 1; switch it to the version 2
-# (or concept) DOI once version 2 is published on Zenodo.
+# Companion preprint, version 2. All versions: doi:10.5281/zenodo.20673482
 preferred-citation:
   type: article
   title: "Identifiability of stimulus localisation in living mycelial networks: an open simulation framework and a Cramer-Rao analysis"
@@ -40,4 +39,4 @@ preferred-citation:
       family-names: "Maroto Enríquez"
       orcid: "https://orcid.org/0009-0005-8238-7310"
   year: 2026
-  doi: "10.5281/zenodo.20673483"
+  doi: "10.5281/zenodo.23578108"
