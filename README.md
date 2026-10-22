@@ -52,11 +52,28 @@ stimulus ──▶ mycelial medium ──▶ electrode traces ──▶ GCC-PHAT
 Fingerprinting is the recommended MVP route: it sidesteps the (very hard) physical
 inverse problem and turns localisation into a supervised-learning problem.
 
+## Two layers: an engineering demo and a scientific result
+
+This repo deliberately separates what is a *pipeline demo* from what is a
+*model-independent result*, because they carry very different weight.
+
+- `run_experiment.py` — the **engineering demo**. End-to-end pipeline (medium →
+  GCC-PHAT → fingerprint localiser), useful to see the parts work. Its headline
+  accuracy is **not** a scientific claim: it measures how learnable the simulator's
+  own static map is.
+- `run_identifiability.py` — the **scientific contribution**. A Cramer-Rao /
+  Fisher analysis that asks *when source localisation on this medium is even
+  possible*, validated against an efficient estimator. Its outputs (the CRLB map
+  and the feasibility phase diagram) are design tools that hold for **any** unbiased
+  estimator, and are framed explicitly as conditional on the propagation model — so
+  they survive as a sensitivity analysis even if the model is imperfect.
+
 ## Quickstart
 
 ```bash
 pip install -r requirements.txt
-python run_experiment.py        # writes figures/ and prints metrics.json
+python run_experiment.py         # engineering demo  -> figures/0*.png
+python run_identifiability.py    # CRLB + phase diagram -> figures/id_*.png
 ```
 
 ## What the experiment shows (reference run)
@@ -93,6 +110,29 @@ Findings worth carrying into a write-up:
 - **The array degrades gracefully.** Fixed per-electrode offsets are absorbed by
   fingerprinting, and losing any single electrode costs at most ≈ 0.3 cm, provided
   the localiser is refitted without it.
+
+## Identifiability: the model-independent result
+
+`run_identifiability.py` answers the question that actually matters: *under what
+conditions is the inverse problem solvable at all?* It computes the Cramer-Rao lower
+bound on position error using the gradients of the real (warped) travel-time fields,
+so it is medium-aware rather than an idealised isotropic calculation.
+
+| Output | What it tells you |
+|---|---|
+| CRLB map (`id_01`) | Where on the substrate localisation is feasible vs ill-posed. Inside the electrode hull, ~1–2 cm; outside it, the bound explodes. A medium-aware generalised GDOP. |
+| Validation (`id_02`) | An efficient ML estimator reaches the bound (empirical/CRLB ≈ 1.05), so the bound is real and achievable, not just theoretical. |
+| Phase diagram (`id_03`) | Feasible substrate area over (anisotropy × SNR). **SNR dominates**: below ~8 dB localisation is infeasible over most of the substrate; anisotropy steadily shrinks the feasible region. |
+
+Timing precision is not assumed — it is **measured** by running the real delay
+pipeline across SNRs (`calibrate_timing_noise`) and fitting the
+`sigma_t ∝ 1/√SNR` law, then propagated through the Fisher analysis. This ties the
+signal stage to the localisation bound.
+
+**Design takeaway** (for this 6-electrode layout, 20 cm substrate, 2 cm tolerance):
+you need roughly SNR ≥ 12 dB to localise over a majority of the area, and stronger
+anisotropy raises that requirement. That is a hardware spec produced with no
+hardware.
 
 ## The sim-to-real flywheel
 

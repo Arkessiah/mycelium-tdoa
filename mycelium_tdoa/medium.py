@@ -81,11 +81,15 @@ class MycelialMedium:
     def _aniso_multiplier(self, dy: float, dx: float) -> float:
         """Direction-dependent slowness multiplier for an edge of orientation (dy, dx).
 
-        Fast along the grain (multiplier ~1), slow perpendicular (~aniso_ratio).
-        Orientation-dependent (undirected), so the travel-time graph stays symmetric.
+        Fast along the grain (~1/mean), slow perpendicular (~aniso_ratio/mean).
+        Normalised so the *directional mean* is 1: this isolates the effect of
+        anisotropy (shape) from the overall slowness level (scale), so a sweep over
+        aniso_ratio does not secretly also change the mean propagation speed.
         """
         phi = np.arctan2(dy, dx)
-        return 1.0 + (self.aniso_ratio - 1.0) * np.sin(phi - self.aniso_angle) ** 2
+        raw = 1.0 + (self.aniso_ratio - 1.0) * np.sin(phi - self.aniso_angle) ** 2
+        mean = 0.5 * (1.0 + self.aniso_ratio)  # directional mean of raw
+        return raw / mean
 
     def _build_graph(self) -> csr_matrix:
         n = self.grid_n

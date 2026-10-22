@@ -7,8 +7,17 @@ from .signals import (
     estimate_pairwise_delays,
 )
 from .localizer import build_fingerprint_dataset, FingerprintLocalizer
+from .crlb import (
+    geometric_crlb_map,
+    crlb_at,
+    feasible_fraction,
+    calibrate_timing_noise,
+    fit_sigma_t_vs_snr,
+    validate_crlb,
+    ml_localize,
+)
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = [
     "MycelialMedium",
     "default_electrodes",
@@ -18,4 +27,11 @@ __all__ = [
     "estimate_pairwise_delays",
     "build_fingerprint_dataset",
     "FingerprintLocalizer",
+    "geometric_crlb_map",
+    "crlb_at",
+    "feasible_fraction",
+    "calibrate_timing_noise",
+    "fit_sigma_t_vs_snr",
+    "validate_crlb",
+    "ml_localize",
 ]
