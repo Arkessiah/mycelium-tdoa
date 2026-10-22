@@ -44,17 +44,33 @@ def spike_kernel(width: int = 120) -> np.ndarray:
     return k / np.max(np.abs(k))
 
 
+def pink_noise(n: int, rng: np.random.Generator) -> np.ndarray:
+    """Unit-variance 1/f noise, made by shaping the spectrum of white noise.
+
+    Extracellular bioelectric recordings are dominated by low-frequency noise and
+    baseline wander, which overlaps the band of slow spikes far more than white
+    noise does.
+    """
+    spec = np.fft.rfft(rng.standard_normal(n))
+    f = np.arange(spec.size, dtype=float)
+    f[0] = 1.0
+    out = np.fft.irfft(spec / np.sqrt(f), n=n)
+    return out / (out.std() + 1e-12)
+
+
 def synthesize_traces(
     delays_s: np.ndarray,
     fs: float = 1.0,
     duration_s: float = 400.0,
     snr_db: float = 8.0,
     rng: np.random.Generator | None = None,
+    pink_fraction: float = 0.0,
 ) -> np.ndarray:
     """Build one noisy trace per electrode, each a delayed copy of a shared spike.
 
-    `delays_s` are shifted so the earliest arrival is 0. Returns array
-    (n_electrodes, n_samples).
+    `delays_s` are shifted so the earliest arrival is 0. `pink_fraction` in [0, 1]
+    is the share of the noise power that is 1/f rather than white; the total noise
+    power, and so the SNR, is unchanged. Returns array (n_electrodes, n_samples).
     """
     rng = rng or np.random.default_rng(0)
     delays_s = np.asarray(delays_s) - np.min(delays_s)
@@ -68,7 +84,10 @@ def synthesize_traces(
         start = onset + int(round(d * fs))
         end = min(start + len(kernel), n_samples)
         traces[k, start:end] += sig_amp * kernel[: end - start]
-        traces[k] += noise_amp * rng.standard_normal(n_samples)
+        noise = np.sqrt(1.0 - pink_fraction) * rng.standard_normal(n_samples)
+        if pink_fraction > 0:
+            noise += np.sqrt(pink_fraction) * pink_noise(n_samples, rng)
+        traces[k] += noise_amp * noise
     return traces
 
 
@@ -93,6 +112,7 @@ def estimate_delays_averaged(
     ref: int = 0,
     max_tau: float | None = None,
     rng: np.random.Generator | None = None,
+    pink_fraction: float = 0.0,
 ) -> np.ndarray:
     """Repeat the stimulus `n_repeats` times and average the cross-spectra.
 
@@ -106,7 +126,7 @@ def estimate_delays_averaged(
     acc = np.zeros((n_e, n // 2 + 1), dtype=complex)
     for _ in range(n_repeats):
         traces = synthesize_traces(delays_s, fs=fs, duration_s=duration_s,
-                                   snr_db=snr_db, rng=rng)
+                                   snr_db=snr_db, rng=rng, pink_fraction=pink_fraction)
         REF = np.fft.rfft(traces[ref], n=n)
         for k in range(n_e):
             SIG = np.fft.rfft(traces[k], n=n)

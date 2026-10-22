@@ -1,11 +1,13 @@
 """End-to-end experiment for the mycelium-tdoa testbed.
 
-Runs four stages and writes figures + a metrics summary:
+Runs five stages and writes figures + a metrics summary:
   1. Medium + warped wavefront visualisation.
   2. GCC-PHAT delay recovery on synthetic noisy traces; its measured RMSE over
      many stimulus positions sets the timing noise used by stages 3 and 4.
   3. Fingerprint localisation accuracy (GP, with uncertainty).
   4. Non-stationarity: drift degrades a fixed model; recalibration restores it.
+  5. Electrode non-idealities: a reseated electrode (shifted timing offset) and
+     N-1 robustness to a dead electrode.
 """
 from __future__ import annotations
 
@@ -86,7 +88,8 @@ def stage2_gccphat(medium, electrodes, rng):
     return float(np.sqrt(np.mean(err**2)))
 
 
-def measure_delay_noise(medium, electrodes, rng, n_sources=20, snr_db=8.0, n_repeats=6):
+def measure_delay_noise(medium, electrodes, rng, n_sources=20, snr_db=8.0, n_repeats=6,
+                        pink_fraction=0.0):
     """RMSE of GCC-PHAT relative delays over random stimulus positions.
 
     This is the timing noise the localisation stages are run at. A single source
@@ -99,7 +102,8 @@ def measure_delay_noise(medium, electrodes, rng, n_sources=20, snr_db=8.0, n_rep
         src = tuple(rng.uniform(margin, medium.size_cm - margin, size=2))
         true = medium.arrival_times(src, electrodes)
         est = estimate_delays_averaged(true, n_repeats=n_repeats, fs=FS, duration_s=400,
-                                       snr_db=snr_db, ref=0, max_tau=30.0, rng=rng)
+                                       snr_db=snr_db, ref=0, max_tau=30.0, rng=rng,
+                                       pink_fraction=pink_fraction)
         errs.append((est - (true - true[0]))[1:])
     return float(np.sqrt(np.mean(np.square(errs))))
 
@@ -179,6 +183,65 @@ def stage4_drift(medium, electrodes, rng, noise):
     return float(np.median(err_stale)), float(np.median(err_recal))
 
 
+ELECTRODE_BIAS_SD_S = 2.0  # assumed spread of fixed per-electrode timing offsets (s)
+
+
+def stage5_electrodes(medium, electrodes, rng, noise):
+    """Electrode-level non-idealities: a reseated electrode and a dead electrode.
+
+    Medium drift is not the only thing that invalidates a calibration. Each
+    electrode carries a fixed timing offset, which the fingerprint map absorbs
+    until the electrode is reseated and the offset changes. And the localiser
+    needs the full delay vector, so a dead electrode forces a refit on the rest.
+    """
+    bias = rng.normal(0.0, ELECTRODE_BIAS_SD_S, size=len(electrodes))
+    Xtr, Ytr = build_fingerprint_dataset(medium, electrodes, n_samples=400, delay_noise_s=noise,
+                                         rng=np.random.default_rng(11), electrode_bias_s=bias)
+    loc = FingerprintLocalizer(length_scale=2.0).fit(Xtr, Ytr)
+
+    def test_error(b):
+        Xte, Yte = build_fingerprint_dataset(medium, electrodes, n_samples=120, delay_noise_s=noise,
+                                             rng=np.random.default_rng(12), electrode_bias_s=b)
+        return FingerprintLocalizer.error_cm(loc.predict(Xte)[0], Yte)
+
+    err_calibrated = test_error(bias)
+    reseated = bias.copy()
+    reseated[1] += ELECTRODE_BIAS_SD_S  # one electrode moved: its offset shifts by 1 sd
+    err_reseated = test_error(reseated)
+
+    # N-1: lose each electrode in turn and refit on the remaining ones
+    dead_medians = []
+    for k in range(len(electrodes)):
+        keep = np.delete(np.arange(len(electrodes)), k)
+        Xk, Yk = build_fingerprint_dataset(medium, electrodes[keep], n_samples=400, delay_noise_s=noise,
+                                           rng=np.random.default_rng(11), electrode_bias_s=bias[keep])
+        Xk_te, Yk_te = build_fingerprint_dataset(medium, electrodes[keep], n_samples=120,
+                                                 delay_noise_s=noise, rng=np.random.default_rng(12),
+                                                 electrode_bias_s=bias[keep])
+        loc_k = FingerprintLocalizer(length_scale=2.0).fit(Xk, Yk)
+        dead_medians.append(np.median(FingerprintLocalizer.error_cm(loc_k.predict(Xk_te)[0], Yk_te)))
+
+    fig, ax = plt.subplots(1, 2, figsize=(11, 4.2))
+    ax[0].boxplot([err_calibrated, err_reseated],
+                  tick_labels=["calibrated", "one electrode\nreseated (stale)"])
+    ax[0].set_ylabel("localisation error (cm)")
+    ax[0].set_title("Per-electrode timing offset")
+    ax[1].bar(np.arange(len(electrodes)), dead_medians, color="grey")
+    ax[1].axhline(np.median(err_calibrated), color="k", ls="--", lw=0.8, label="all electrodes")
+    ax[1].set_xlabel("dead electrode (localiser refitted without it)")
+    ax[1].set_ylabel("median error (cm)")
+    ax[1].set_title("N-1 robustness")
+    ax[1].legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(os.path.join(OUT, "05_electrodes.png"), dpi=130)
+    plt.close(fig)
+    return {
+        "electrode_bias_calibrated_median_error_cm": float(np.median(err_calibrated)),
+        "electrode_reseated_stale_median_error_cm": float(np.median(err_reseated)),
+        "dead_electrode_worst_median_error_cm": float(np.max(dead_medians)),
+    }
+
+
 def main():
     rng = np.random.default_rng(42)
     medium = MycelialMedium(seed=3)
@@ -189,14 +252,19 @@ def main():
     delay_rmse = measure_delay_noise(medium, electrodes, rng)
     loc_metrics = stage3_localise(medium, electrodes, rng, delay_rmse)
     drift_stale, drift_recal = stage4_drift(medium, electrodes, rng, delay_rmse)
+    electrode_metrics = stage5_electrodes(medium, electrodes, rng, delay_rmse)
+    # same SNR, half of the noise power 1/f: how much does coloured noise cost?
+    delay_rmse_pink = measure_delay_noise(medium, electrodes, rng, pink_fraction=0.5)
 
     metrics = {
         "delay_recovery_rmse_example_s": round(delay_rmse_example, 4),
         "delay_recovery_rmse_s": round(delay_rmse, 4),
+        "delay_recovery_rmse_half_pink_noise_s": round(delay_rmse_pink, 4),
         **{k: round(v, 3) for k, v in loc_metrics.items()},
         "substrate_side_cm": medium.size_cm,
         "drift_median_error_stale_cm": round(drift_stale, 3),
         "drift_median_error_recalibrated_cm": round(drift_recal, 3),
+        **{k: round(v, 3) for k, v in electrode_metrics.items()},
     }
     with open(os.path.join(OUT, "metrics.json"), "w") as f:
         json.dump(metrics, f, indent=2)

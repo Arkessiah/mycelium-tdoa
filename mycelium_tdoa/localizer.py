@@ -22,8 +22,13 @@ def build_fingerprint_dataset(
     delay_noise_s: float = 0.0,
     ref: int = 0,
     rng: np.random.Generator | None = None,
+    electrode_bias_s: np.ndarray | None = None,
 ):
     """Sample stimuli at random known positions; return (X, y).
+
+    `electrode_bias_s` is a fixed timing offset per electrode (contact impedance,
+    front-end filtering), shared by every stimulus. Unlike `delay_noise_s` it does
+    not average out; calibration absorbs it only while the electrode stays put.
 
     X : array (n_samples, n_electrodes - 1)  -- delays relative to `ref`
     y : array (n_samples, 2)                 -- true (x, y) in cm
@@ -36,6 +41,8 @@ def build_fingerprint_dataset(
     keep = [k for k in range(len(electrodes)) if k != ref]
     for x, y in zip(xs, ys):
         t = medium.arrival_times((x, y), electrodes)
+        if electrode_bias_s is not None:
+            t = t + electrode_bias_s
         delays = t - t[ref]
         delays = delays[keep]
         if delay_noise_s > 0:
