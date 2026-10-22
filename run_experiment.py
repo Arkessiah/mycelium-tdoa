@@ -2,7 +2,8 @@
 
 Runs four stages and writes figures + a metrics summary:
   1. Medium + warped wavefront visualisation.
-  2. GCC-PHAT delay recovery on synthetic noisy traces.
+  2. GCC-PHAT delay recovery on synthetic noisy traces; its measured RMSE over
+     many stimulus positions sets the timing noise used by stages 3 and 4.
   3. Fingerprint localisation accuracy (GP, with uncertainty).
   4. Non-stationarity: drift degrades a fixed model; recalibration restores it.
 """
@@ -85,8 +86,25 @@ def stage2_gccphat(medium, electrodes, rng):
     return float(np.sqrt(np.mean(err**2)))
 
 
-def stage3_localise(medium, electrodes, rng):
-    noise = 0.3  # s of delay measurement noise
+def measure_delay_noise(medium, electrodes, rng, n_sources=20, snr_db=8.0, n_repeats=6):
+    """RMSE of GCC-PHAT relative delays over random stimulus positions.
+
+    This is the timing noise the localisation stages are run at. A single source
+    is not representative (the delay spread depends on where the stimulus is), and
+    a hand-picked, smaller value makes the end-to-end accuracy optimistic.
+    """
+    margin = 1.0
+    errs = []
+    for _ in range(n_sources):
+        src = tuple(rng.uniform(margin, medium.size_cm - margin, size=2))
+        true = medium.arrival_times(src, electrodes)
+        est = estimate_delays_averaged(true, n_repeats=n_repeats, fs=FS, duration_s=400,
+                                       snr_db=snr_db, ref=0, max_tau=30.0, rng=rng)
+        errs.append((est - (true - true[0]))[1:])
+    return float(np.sqrt(np.mean(np.square(errs))))
+
+
+def stage3_localise(medium, electrodes, rng, noise):
     Xtr, Ytr = build_fingerprint_dataset(medium, electrodes, n_samples=400,
                                          delay_noise_s=noise, rng=rng)
     Xte, Yte = build_fingerprint_dataset(medium, electrodes, n_samples=120,
@@ -114,8 +132,7 @@ def stage3_localise(medium, electrodes, rng):
     return float(np.median(err)), float(np.mean(err)), float(np.percentile(err, 90))
 
 
-def stage4_drift(medium, electrodes, rng):
-    noise = 0.3
+def stage4_drift(medium, electrodes, rng, noise):
     Xtr, Ytr = build_fingerprint_dataset(medium, electrodes, n_samples=400,
                                          delay_noise_s=noise, rng=rng)
     loc = FingerprintLocalizer(length_scale=2.0).fit(Xtr, Ytr)
@@ -147,11 +164,13 @@ def main():
     electrodes = default_electrodes(medium.size_cm)
 
     stage1_medium(medium, electrodes)
-    delay_rmse = stage2_gccphat(medium, electrodes, rng)
-    med_err, mean_err, p90 = stage3_localise(medium, electrodes, rng)
-    drift_stale, drift_recal = stage4_drift(medium, electrodes, rng)
+    delay_rmse_example = stage2_gccphat(medium, electrodes, rng)
+    delay_rmse = measure_delay_noise(medium, electrodes, rng)
+    med_err, mean_err, p90 = stage3_localise(medium, electrodes, rng, delay_rmse)
+    drift_stale, drift_recal = stage4_drift(medium, electrodes, rng, delay_rmse)
 
     metrics = {
+        "delay_recovery_rmse_example_s": round(delay_rmse_example, 4),
         "delay_recovery_rmse_s": round(delay_rmse, 4),
         "localisation_median_error_cm": round(med_err, 3),
         "localisation_mean_error_cm": round(mean_err, 3),
