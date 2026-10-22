@@ -16,6 +16,14 @@ authors:
     orcid: "https://orcid.org/0009-0005-8238-7310"
 version: "0.3.0"
 date-released: "2026-10-22"
+doi: "10.5281/zenodo.23578185"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.23578185"
+    description: "This release (v0.3.0)"
+  - type: doi
+    value: "10.5281/zenodo.20673697"
+    description: "All versions of the software"
 license: MIT
 repository-code: "https://github.com/Arkessiah/mycelium-tdoa"
 url: "https://iitrcc.org"

@@ -161,6 +161,18 @@ the shared sim. That loop is the point.
 - [ ] Closed-loop demo: localise → trigger an actuator.
 - [ ] Provenance: pin datasets + model artefacts (DVC, optional permanent anchoring).
 
+## Citation
+
+- Preprint: *Identifiability of stimulus localisation in living mycelial networks:
+  an open simulation framework and a Cramér–Rao analysis*, version 2,
+  [doi:10.5281/zenodo.23578108](https://doi.org/10.5281/zenodo.23578108)
+  (all versions: [10.5281/zenodo.20673482](https://doi.org/10.5281/zenodo.20673482)).
+- Software v0.3.0, which reproduces every number in preprint version 2:
+  [doi:10.5281/zenodo.23578185](https://doi.org/10.5281/zenodo.23578185)
+  (all versions: [10.5281/zenodo.20673697](https://doi.org/10.5281/zenodo.20673697)).
+
+GitHub's "Cite this repository" button reads `CITATION.cff`.
+
 ## License
 
 MIT.
