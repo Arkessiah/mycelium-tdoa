@@ -129,7 +129,28 @@ def stage3_localise(medium, electrodes, rng, noise):
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "03_localisation.png"), dpi=130)
     plt.close(fig)
-    return float(np.median(err)), float(np.mean(err)), float(np.percentile(err, 90))
+
+    # Reference points that give the error a scale. No-skill: always predict the
+    # mean training position. Ceiling: the same localiser with noise-free delays,
+    # i.e. what is left once timing noise is removed (map learnability + grid).
+    err_noskill = FingerprintLocalizer.error_cm(np.tile(Ytr.mean(axis=0), (len(Yte), 1)), Yte)
+    Xtr0, Ytr0 = build_fingerprint_dataset(medium, electrodes, n_samples=400,
+                                           delay_noise_s=0.0, rng=np.random.default_rng(1))
+    Xte0, Yte0 = build_fingerprint_dataset(medium, electrodes, n_samples=120,
+                                           delay_noise_s=0.0, rng=np.random.default_rng(99))
+    loc0 = FingerprintLocalizer(length_scale=2.0).fit(Xtr0, Ytr0)
+    err_ceiling = FingerprintLocalizer.error_cm(loc0.predict(Xte0)[0], Yte0)
+    # fraction of test stimuli whose true position falls within 2 sigma of the GP
+    coverage_2sigma = float(np.mean(err <= 2.0 * sigma))
+
+    return {
+        "localisation_median_error_cm": float(np.median(err)),
+        "localisation_mean_error_cm": float(np.mean(err)),
+        "localisation_p90_error_cm": float(np.percentile(err, 90)),
+        "localisation_noskill_median_error_cm": float(np.median(err_noskill)),
+        "localisation_noisefree_median_error_cm": float(np.median(err_ceiling)),
+        "localisation_coverage_2sigma": coverage_2sigma,
+    }
 
 
 def stage4_drift(medium, electrodes, rng, noise):
@@ -166,15 +187,13 @@ def main():
     stage1_medium(medium, electrodes)
     delay_rmse_example = stage2_gccphat(medium, electrodes, rng)
     delay_rmse = measure_delay_noise(medium, electrodes, rng)
-    med_err, mean_err, p90 = stage3_localise(medium, electrodes, rng, delay_rmse)
+    loc_metrics = stage3_localise(medium, electrodes, rng, delay_rmse)
     drift_stale, drift_recal = stage4_drift(medium, electrodes, rng, delay_rmse)
 
     metrics = {
         "delay_recovery_rmse_example_s": round(delay_rmse_example, 4),
         "delay_recovery_rmse_s": round(delay_rmse, 4),
-        "localisation_median_error_cm": round(med_err, 3),
-        "localisation_mean_error_cm": round(mean_err, 3),
-        "localisation_p90_error_cm": round(p90, 3),
+        **{k: round(v, 3) for k, v in loc_metrics.items()},
         "substrate_side_cm": medium.size_cm,
         "drift_median_error_stale_cm": round(drift_stale, 3),
         "drift_median_error_recalibrated_cm": round(drift_recal, 3),
