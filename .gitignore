@@ -5,3 +5,16 @@
 #PYTHON
 __pycache__/
 *.pyc
+
+#PRIVATE CONTEXT (synced via Obsidian, never committed)
+MEMORY.md
+CLAUDE.md
+AGENTS.md
+OPERATION.md
+TODO.md
+PLAN.md
+CHANGELOG.md
+.claude/
+BCK/
+logs/
+.linearpm.json
